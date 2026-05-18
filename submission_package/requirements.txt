@@ -1,0 +1,11 @@
+# CyberNova Insight Engine - Python Dependencies
+# Install with: pip install -r requirements.txt
+#
+# Note: versions are intentionally unpinned for better compatibility with
+# newer Python runtimes (e.g., Python 3.14 on Windows).
+
+Flask
+flask-cors
+pandas
+numpy
+scikit-learn
