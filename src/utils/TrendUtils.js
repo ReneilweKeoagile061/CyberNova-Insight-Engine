@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// TrendUtils.js — Business Intelligence Utilities for CyberNova Dashboard
+// TrendUtils.js — Business Intelligence Utilities for AfricaGuard Dashboard
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Number Formatting ─────────────────────────────────────────────────────────

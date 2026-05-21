@@ -1,11 +1,20 @@
-# CyberNova Insight Engine - Python Dependencies
-# Install with: pip install -r requirements.txt
-#
-# Note: versions are intentionally unpinned for better compatibility with
-# newer Python runtimes (e.g., Python 3.14 on Windows).
+# AfricaGuard — Python Dependencies
+# Install: pip install -r requirements.txt
 
 Flask
 flask-cors
 pandas
 numpy
 scikit-learn
+requests
+PyJWT
+gunicorn
+
+# Azure (optional — for production deployment)
+azure-ai-ml>=1.12.0
+azure-identity>=1.15.0
+azure-storage-blob>=12.19.0
+mlflow>=2.9.0
+
+# Claude AI (optional — Phase 6)
+anthropic>=0.40.0

@@ -2,7 +2,8 @@
 // ThreatIntelligence.jsx — COMPACT VERSION (Top 10 IPs, clear signals)
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
-import { getThreatIntel } from "../services/api";
+import { getThreatIntel, explainThreat } from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { formatNumber, formatPercent } from "../utils/TrendUtils";
 
@@ -37,11 +38,31 @@ function SeverityBadge({ level }) {
   );
 }
 
-export default function ThreatIntelligence({ userRole }) {
+export default function ThreatIntelligence() {
+  const { user } = useAuth();
+  const userRole = user?.role || "security";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState("abuse_score");
   const [sortOrder, setSortOrder] = useState("desc");
+  const [explanation, setExplanation] = useState(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainedIp, setExplainedIp] = useState(null);
+
+  const handleExplain = async (threat) => {
+    setExplaining(true);
+    setExplanation(null);
+    try {
+      const audience = userRole === "security" ? "technical" : "executive";
+      const res = await explainThreat(threat, audience);
+      setExplanation(res.explanation);
+      setExplainedIp(threat.ip_address);
+    } catch (e) {
+      setExplanation("Could not generate explanation. Check API and ANTHROPIC_API_KEY.");
+    } finally {
+      setExplaining(false);
+    }
+  };
 
   useEffect(() => {
     const fetch = async () => {
@@ -231,6 +252,7 @@ export default function ThreatIntelligence({ userRole }) {
               <th>ISP</th>
               <th>Country</th>
               <th>Action</th>
+              <th>AI</th>
             </tr>
           </thead>
           <tbody>
@@ -286,11 +308,42 @@ export default function ThreatIntelligence({ userRole }) {
                       {t.recommended_action === "block" ? "🚫 Block" : "👁 Monitor"}
                     </button>
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn-action btn-action--monitor"
+                      style={{ fontSize:".65rem", padding:"3px 8px" }}
+                      disabled={explaining}
+                      onClick={() => handleExplain(t)}
+                    >
+                      {explaining && explainedIp === t.ip_address ? "…" : "🤖 Explain"}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        {explanation && (
+          <div
+            className="threat-explanation"
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 8,
+              fontSize: ".75rem",
+              lineHeight: 1.5,
+              color: "#334155",
+            }}
+          >
+            <strong style={{ display: "block", marginBottom: 6 }}>
+              Claude analysis {explainedIp ? `· ${explainedIp}` : ""}
+            </strong>
+            {explanation}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-CyberNova Insight Engine — Flask API (FIXED VERSION)
+AfricaGuard — Flask API
+National-scale Azure cybersecurity platform (migrated from CyberNova Insight Engine)
 CET333 Product Development · Reneilwe Keoagile · BIDA22-061
 Botswana Accountancy College · May 2026
 
@@ -17,8 +18,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 from datetime import datetime
-from functools import wraps
-
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -26,16 +25,23 @@ import pandas as pd
 import numpy as np
 import pickle
 
+from africaguard_auth import AUTH_MODE, require_auth
+from azure_ml import FEATURE_COLS, predict_azure
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cybernova-cet333-bac-2026")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "africaguard-cet333-bac-2026")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
-CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"], supports_credentials=True)
+_cors_origins = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
+CORS(app, origins=[o.strip() for o in _cors_origins if o.strip()], supports_credentials=True)
 
 # ── TTL Cache ────────────────────────────────────────────────────────────────
 _CACHE = {}
-CACHE_TTL = float(os.environ.get("CYBERNOVA_CACHE_TTL", "45"))
+CACHE_TTL = float(os.environ.get("AFRICAGUARD_CACHE_TTL", os.environ.get("CYBERNOVA_CACHE_TTL", "45")))
 
 def _cache_get(key):
     if key in _CACHE:
@@ -53,7 +59,8 @@ def cache_key(*parts):
 
 # ── Startup ──────────────────────────────────────────────────────────────────
 print("\n" + "="*55)
-print("  CyberNova Insight Engine  v2.0 (FIXED)")
+print("  AfricaGuard  v3.0 (Azure-ready)")
+print(f"  Auth mode:     {AUTH_MODE}")
 print("  CET333 · Reneilwe Keoagile · BIDA22-061")
 print("="*55)
 
@@ -104,15 +111,6 @@ except Exception as e:
 
 print("="*55 + "\n")
 
-
-FEATURE_COLS = [
-    "pages_viewed", "time_on_site", "engagement_score", "bot_score",
-    "requests_per_ip", "requests_per_session", "hour_of_day",
-    "is_weekend", "is_business_hours", "seconds_since_last_request",
-    "avg_time_per_page", "is_bounce", "error_count",
-    "bot_indicator_user_agent", "bot_indicator_high_freq",
-    "bot_indicator_fast_requests",
-]
 
 SIMULATION_MODE = False
 
@@ -232,27 +230,20 @@ def _make_threat(ip, country, score, req_count, row):
 
 _build_threat_data()
 
-# ── Demo users ────────────────────────────────────────────────────────────────
-DEMO_USERS = {
-    "sales@cybernova.ai": {
-        "pwd":          generate_password_hash(os.environ.get("CYBERNOVA_SALES_PASSWORD", "CyberNovaSales2026")),
-        "role":         "sales",
-        "display_name": "Sales Member",
-    },
-    "security@cybernova.ai": {
-        "pwd":          generate_password_hash(os.environ.get("CYBERNOVA_SECURITY_PASSWORD", "CyberNovaSecurity2026")),
-        "role":         "security",
-        "display_name": "Security Analyst",
-    },
+# ── Demo users (session mode) ─────────────────────────────────────────────────
+_sales_pwd = os.environ.get("AFRICAGUARD_SALES_PASSWORD", os.environ.get("CYBERNOVA_SALES_PASSWORD", "AfricaGuardSales2026"))
+_sec_pwd = os.environ.get("AFRICAGUARD_SECURITY_PASSWORD", os.environ.get("CYBERNOVA_SECURITY_PASSWORD", "AfricaGuardSecurity2026"))
+_user_tpl = lambda role, name, pwd: {
+    "pwd": generate_password_hash(pwd),
+    "role": role,
+    "display_name": name,
 }
-
-def require_auth(f):
-    @wraps(f)
-    def dec(*args, **kwargs):
-        if not session.get("user_id"):
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
-    return dec
+DEMO_USERS = {
+    "sales@africaguard.ai": _user_tpl("sales", "Sales Member", _sales_pwd),
+    "security@africaguard.ai": _user_tpl("security", "Security Analyst", _sec_pwd),
+    "sales@cybernova.ai": _user_tpl("sales", "Sales Member", _sales_pwd),
+    "security@cybernova.ai": _user_tpl("security", "Security Analyst", _sec_pwd),
+}
 
 def _anomaly_series(frame):
     def safe(name, default=0.0):
@@ -276,13 +267,16 @@ def health():
         "scaler_loaded": scaler is not None,
         "data_loaded":   df is not None,
         "records_count": int(len(df)) if df is not None else 0,
-        "model_source":  "databricks_trained_local_pkl",
+        "model_source":  "azure_ml" if os.getenv("AZURE_ML_ENDPOINT_URL") else "local_pkl",
+        "auth_mode":     AUTH_MODE,
         "timestamp":     datetime.now().isoformat(),
-        "version":       "2.0.1-FIXED",
+        "version":       "3.0.0-AFRICAGUARD",
     })
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
+    if AUTH_MODE == "b2c":
+        return jsonify({"error": "Use Azure AD B2C login — session auth disabled"}), 400
     data = request.json or {}
     uid  = (data.get("email") or data.get("username") or "").strip().lower()
     pwd  = data.get("password", "")
@@ -567,37 +561,30 @@ def predict_single():
             print(f"❌ {error_msg}")
             return jsonify({"error": error_msg}), 400
         
-        # Extract features in the correct order
         try:
-            features = np.array([[float(data.get(col, 0)) for col in FEATURE_COLS]])
+            feature_list = [float(data.get(col, 0)) for col in FEATURE_COLS]
         except ValueError as e:
             error_msg = f"Invalid feature values - cannot convert to float: {str(e)}"
             print(f"❌ {error_msg}")
             return jsonify({"error": error_msg}), 400
-        
-        # ADDED: Check for NaN or Inf values
-        if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-            error_msg = "Invalid numeric values (NaN/Inf) in features"
-            print(f"❌ {error_msg}")
-            return jsonify({"error": error_msg}), 400
-        
-        # Scale and predict
-        scaled = scaler.transform(features)
-        t0 = time.time()
-        pred = rf_model.predict(scaled)[0]
-        probs = rf_model.predict_proba(scaled)[0]
-        ms = round((time.time() - t0) * 1000, 2)
-        
+
+        if any(np.isnan(feature_list)) or any(np.isinf(feature_list)):
+            return jsonify({"error": "Invalid numeric values (NaN/Inf) in features"}), 400
+
+        ml_result = predict_azure(feature_list, rf_model, scaler)
+
         result = {
-            "traffic_type": str(pred),
-            "prediction": str(pred),
-            "confidence": round(float(max(probs)), 4),
-            "probabilities": {str(cls): round(float(p), 4) for cls, p in zip(rf_model.classes_, probs)},
-            "inference_time_ms": ms,
-            "model_source": "databricks_trained_local_pkl",
+            "traffic_type": ml_result["prediction"],
+            "prediction": ml_result["prediction"],
+            "confidence": ml_result.get("confidence"),
+            "probabilities": ml_result.get("probabilities", {}),
+            "inference_time_ms": ml_result.get("inference_time_ms"),
+            "inference_source": ml_result.get("inference_source"),
+            "model_source": ml_result.get("inference_source"),
         }
-        
-        print(f"✅ Prediction successful: {pred} ({result['confidence']*100:.1f}% confidence, {ms}ms)")
+
+        conf_pct = f"{result['confidence']*100:.1f}%" if result.get("confidence") else "n/a"
+        print(f"✅ Prediction: {result['prediction']} ({conf_pct}, {result.get('inference_source')})")
         return jsonify(result)
         
     except ValueError as e:
@@ -613,9 +600,58 @@ def predict_single():
         print(traceback.format_exc())
         return jsonify({"error": error_msg}), 400
 
+@app.route("/api/explain-threat", methods=["POST"])
+@require_auth
+def explain_threat():
+    """Claude AI threat summarisation for executives and analysts."""
+    import json as _json
+    data = request.json or {}
+    threat_data = data.get("threat_data", {})
+    audience = data.get("audience", "executive")
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({
+            "explanation": (
+                f"[Demo mode] Threat {threat_data.get('ip_address', 'unknown')}: "
+                f"abuse score {threat_data.get('abuse_score', 'N/A')}. "
+                f"Set ANTHROPIC_API_KEY for live Claude summaries."
+            ),
+            "audience": audience,
+            "source": "demo_fallback",
+        })
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        prompts = {
+            "executive": "Explain this cybersecurity threat in plain English for a non-technical executive. Focus on business risk and recommended action. Maximum 3 sentences.",
+            "technical": "Provide a technical analysis for a security engineer. Include attack vector, severity, and mitigation steps.",
+            "analyst": "Summarise for a security analyst. Include confidence interpretation and investigation priority.",
+        }
+        instruction = prompts.get(audience, prompts["executive"])
+        message = client.messages.create(
+            model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": f"{instruction}\n\nThreat data:\n{_json.dumps(threat_data, indent=2)}",
+            }],
+        )
+        text = message.content[0].text
+        return jsonify({
+            "explanation": text,
+            "audience": audience,
+            "threat_id": threat_data.get("ip_address", "unknown"),
+            "source": "claude",
+        })
+    except Exception as exc:
+        return jsonify({"error": f"Claude API failed: {exc}"}), 502
+
+
 @app.route("/")
 def root():
-    return jsonify({"name":"CyberNova Insight Engine","version":"2.0.1-FIXED","health":"/api/health"})
+    return jsonify({"name": "AfricaGuard", "version": "3.0.0", "health": "/api/health"})
 
 if __name__ == "__main__":
     print(f"  API:    http://localhost:5000")

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { checkHealth, getApiBaseUrl, getErrorDetails } from "./services/api";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useAuth } from "./contexts/AuthContext";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import RegionalDashboard from "./components/RegionalDashboard";
@@ -96,7 +96,7 @@ function AppInner() {
   if (loading) return (
     <div className="app-shell app-shell--loading">
       <div className="spinner" />
-      <p>Initialising CyberNova pipeline…</p>
+      <p>Initialising AfricaGuard pipeline…</p>
     </div>
   );
 
@@ -106,10 +106,10 @@ function AppInner() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-brand">
-          <div className="brand-mark">CN</div>
+          <div className="brand-mark">AG</div>
           <div>
-            <h1 className="brand-title">CyberNova Insight Engine</h1>
-            <p className="brand-sub">Southern Africa · RSD / CRISP-DM · CET333</p>
+            <h1 className="brand-title">AfricaGuard</h1>
+            <p className="brand-sub">National Cybersecurity Platform · BOCRA-ready · CET333</p>
           </div>
         </div>
 
@@ -156,7 +156,7 @@ function AppInner() {
       </main>
 
       <footer className="app-footer">
-        <span>© 2026 CyberNova Analytics Ltd</span>
+        <span>© 2026 AfricaGuard Analytics</span>
         <span className="footer-sep">|</span>
         <span>Reneilwe Keoagile · BIDA22-061</span>
         <span className="footer-sep">|</span>
@@ -169,5 +169,5 @@ function AppInner() {
 }
 
 export default function App() {
-  return <AuthProvider><AppInner /></AuthProvider>;
+  return <AppInner />;
 }
