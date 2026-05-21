@@ -5,6 +5,8 @@
 > **Author:** Reneilwe Keoagile (BIDA22-061) · Botswana Accountancy College · CRISP-DM  
 > **Repository:** [https://github.com/ReneilweKeoagile061/CyberNova-Insight-Engine](https://github.com/ReneilweKeoagile061/CyberNova-Insight-Engine) (public)
 
+**Branches:** `main` = stable CyberNova baseline · **`dev`** = AfricaGuard v3.0 (all Azure migration work — use this branch)
+
 ---
 
 ## What changed (CyberNova → AfricaGuard v3.0)
